@@ -19,7 +19,7 @@
 
 ```
 base/api, base/web     서버의 기본 설계도 (Deployment, Service, Ingress)
-overlays/api           api 전용 설정 (도메인, 비밀값 연결, 인증서 발급기)
+overlays/api           api 전용 설정 (도메인, 비밀값 연결)
 overlays/web           web 전용 설정 (도메인, 이미지 버전)
 docs/                  api, web 각각의 상세 문서
 ```
@@ -41,26 +41,17 @@ Cloudflare 대시보드의 DNS 메뉴에서 레코드를 하나 추가합니다.
 
 구름을 회색으로 두는 이유는, Cloudflare가 중간에서 요청을 가로채지 않고 서버로 곧바로 보내게 하기 위해서입니다. 확인은 `nslookup travel.tsungmn.com`으로 합니다.
 
-### ② Cloudflare 토큰을 Secret으로 만들기
+### ② Cloudflare 토큰 Secret 만들기
 
-아래 ③에서 설명할 인증서 발급에 필요한 열쇠입니다.
-
-1. Cloudflare → My Profile → API Tokens → Create Token → **Edit zone DNS** 템플릿을 선택합니다.
-2. Zone Resources를 `tsungmn.com` 하나로 제한합니다. 토큰이 새어도 이 도메인의 DNS만 건드릴 수 있습니다.
-3. 클러스터에서 다음 명령을 실행합니다. 토큰이 화면과 프로세스 목록에 남지 않는 방식입니다.
-
-```bash
-read -s CF_TOKEN       # 붙여넣고 Enter. 화면에 아무것도 안 보이는 것이 정상입니다.
-printf %s "$CF_TOKEN" | kubectl -n travel-planner-prod create secret generic cloudflare-api-token --from-file=api-token=/dev/stdin
-unset CF_TOKEN
-```
+인증서 발급기(`ClusterIssuer letsencrypt-tsungmn`)는 이 저장소가 아니라 **`tsungmn-config` 저장소**에서 관리하고, skku-notice와 함께 씁니다.
+Cloudflare 토큰 Secret도 그 저장소의 README를 따라 `cert-manager` 네임스페이스에 한 번만 만들면 됩니다. 이 저장소에서 따로 만들 것은 없습니다.
 
 다른 컴퓨터(홈서버 등)에서 하려면 맨 아래 **부록 A**를 따릅니다.
 
 ### 인증서가 잘 만들어졌는지 확인
 
 ```bash
-kubectl -n travel-planner-prod get issuer         # READY 가 True
+kubectl get clusterissuer                         # READY 가 True
 kubectl -n travel-planner-prod get certificate    # READY 가 True
 ```
 
@@ -76,15 +67,15 @@ kubectl -n travel-planner-prod get certificate    # READY 가 True
 
 ### A-1. master에서: 작은 출입증 만들기 (한 번만)
 
-아래 계정은 `travel-planner-prod` 안에서 Secret을 **만들 수만** 있습니다. 읽거나 지울 수는 없습니다.
+아래 계정은 `cert-manager` 안에서 Secret을 **만들 수만** 있습니다. 읽거나 지울 수는 없습니다.
 
 ```bash
-kubectl -n travel-planner-prod create serviceaccount secret-maker
-kubectl -n travel-planner-prod create role secret-creator --verb=create --resource=secrets
-kubectl -n travel-planner-prod create rolebinding secret-maker-bind --role=secret-creator --serviceaccount=travel-planner-prod:secret-maker
+kubectl -n cert-manager create serviceaccount secret-maker
+kubectl -n cert-manager create role secret-creator --verb=create --resource=secrets
+kubectl -n cert-manager create rolebinding secret-maker-bind --role=secret-creator --serviceaccount=cert-manager:secret-maker
 
 # 24시간만 쓸 수 있는 출입증(토큰). 메모장에만 임시로 복사하고, 채팅이나 git에는 붙여넣지 않습니다.
-kubectl -n travel-planner-prod create token secret-maker --duration=24h
+kubectl -n cert-manager create token secret-maker --duration=24h
 
 # 클러스터 주소 (https://<IP>:6443 모양)
 kubectl config view --minify -o jsonpath='{.clusters[0].cluster.server}{"\n"}'
@@ -118,7 +109,7 @@ EOF
 
 kubectl config set-cluster travel --server=https://<master서버IP>:6443 --certificate-authority=ca.crt --embed-certs=true
 kubectl config set-credentials secret-maker --token=<토큰>
-kubectl config set-context travel --cluster=travel --user=secret-maker --namespace=travel-planner-prod
+kubectl config set-context travel --cluster=travel --user=secret-maker --namespace=cert-manager
 kubectl config use-context travel
 
 kubectl auth can-i create secrets      # yes 가 나오면 준비가 끝난 것입니다.
@@ -137,7 +128,7 @@ unset CF_TOKEN
 이 출입증은 읽기 권한이 없으므로, 만들어졌는지는 master에서 확인합니다.
 
 ```bash
-kubectl -n travel-planner-prod get secret cloudflare-api-token
+kubectl -n cert-manager get secret cloudflare-api-token
 ```
 
 ### A-5. 홈서버에서: 서비스 안쪽 시험
@@ -164,7 +155,7 @@ kubectl config delete-user secret-maker
 master에서:
 
 ```bash
-kubectl -n travel-planner-prod delete rolebinding secret-maker-bind
-kubectl -n travel-planner-prod delete role secret-creator
-kubectl -n travel-planner-prod delete serviceaccount secret-maker
+kubectl -n cert-manager delete rolebinding secret-maker-bind
+kubectl -n cert-manager delete role secret-creator
+kubectl -n cert-manager delete serviceaccount secret-maker
 ```

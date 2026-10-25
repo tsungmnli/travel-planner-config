@@ -22,7 +22,6 @@
 | `base/api/` | api의 기본 설계도 (Deployment, Service, Ingress) |
 | `overlays/api/configmap.yaml` | 일반 설정 (운영 환경 표시, 공개 주소, 메일 보내기 설정 등) |
 | `overlays/api/secret.yaml` | Vault의 비밀값을 가져오는 연결 정보 |
-| `overlays/api/issuer.yaml` | 인증서 발급기 (api, web이 함께 씁니다) |
 | `overlays/api/kustomization.yaml` | 이미지 버전(`newTag`)과 도메인 설정 |
 
 ## 3. 처음 세팅하는 순서
